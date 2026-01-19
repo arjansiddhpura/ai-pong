@@ -47,6 +47,10 @@ class PongEnv(gym.Env):
 
         # Opponent Policy (can be a function or a trained model)
         self.opponent_policy = None 
+        
+        # Human mode: When True, opponent is controlled by keyboard instead of AI
+        self.human_mode = False
+        self.human_action = 0  # 0=Stay, 1=Up, 2=Down
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -65,8 +69,12 @@ class PongEnv(gym.Env):
         self.ball_vx = self.ball_speed_val * np.cos(angle) * direction
         self.ball_vy = self.ball_speed_val * np.sin(angle)
         
-        self.score_left = 0
-        self.score_right = 0
+        # Only reset scores on first call or if explicitly requested
+        # This allows scores to persist between rounds during gameplay
+        reset_scores = options.get("reset_scores", False) if options else False
+        if not hasattr(self, 'score_left') or reset_scores:
+            self.score_left = 0
+            self.score_right = 0
         
         if self.render_mode == "human":
             self._render_frame()
@@ -139,65 +147,57 @@ class PongEnv(gym.Env):
     def _move_opponent(self):
         """
         Logic for the Left Paddle (Opponent).
-        This can be simple tracking or a loaded policy.
+        This can be: human keyboard input, a loaded policy, or simple heuristic.
         """
-        if self.opponent_policy is None:
-            # Simple Heuristic: Follow the ball
-            if self.ball_y < self.left_paddle_y + self.paddle_height / 2:
-                 self.left_paddle_y -= self.paddle_speed
-            elif self.ball_y > self.left_paddle_y + self.paddle_height / 2:
-                 self.left_paddle_y += self.paddle_speed
-        else:
+        # Human mode: Use keyboard input stored via set_opponent_action
+        if self.human_mode:
+            if self.human_action == 1:  # Up
+                self.left_paddle_y -= self.paddle_speed
+            elif self.human_action == 2:  # Down
+                self.left_paddle_y += self.paddle_speed
+        elif self.opponent_policy is not None:
             # Predict action using the trained model
-            # We need to process the observation to match what the model expects
-            # The model expects (1, 84, 84, 1) or stacked frames if using VecFrameStack
-            # But the raw env returns (H, W, 3).
-            # We must manually preprocess if we are using the raw env within the class.
-            
-            # HOWEVER, simplest way for 'self-play' without circular dependencies is:
-            # The opponent sees the game flipped? Or same?
-            # Standard: Opponent is player 1 (Left). 
-            # If we train "Agent is Right", then "Agent as Left" means we need to flip the input horizontally?
-            # To avoid complexity, let's just feed the current observation. 
-            # Ideally we flip the image so the 'Left' paddle looks like the 'Right' paddle to the model.
-            
+            import cv2
             raw_obs = self._get_obs()
-            # 1. Flip horizontally so Left becomes Right (visual perspective swap)
+            # Flip horizontally so Left becomes Right (visual perspective swap)
             flipped_obs = np.fliplr(raw_obs)
             
-            # 2. Preprocess (Gray + Resize). 
-            # This is slow to do in Python every step, but fine for Pong.
-            # Using OpenCV for resize to match wrappers
-            import cv2
+            # Preprocess (Gray + Resize)
             gray = cv2.cvtColor(flipped_obs, cv2.COLOR_RGB2GRAY)
             resized = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
             
-            # 3. Add batch dim and channel dim: (1, 84, 84, 1) if not stacked
-            # If our model expects stacked frames, this single frame won't work well!
-            # The model trained with VecFrameStack expects 4 channels.
-            # We need to maintain a history buffer for the opponent.
-            
+            # Maintain frame buffer for stacked input
             if not hasattr(self, 'opponent_obs_buffer'):
                 self.opponent_obs_buffer = np.zeros((84, 84, 4), dtype=np.uint8)
             
-            # Shift buffer
             self.opponent_obs_buffer = np.roll(self.opponent_obs_buffer, -1, axis=-1)
             self.opponent_obs_buffer[:, :, -1] = resized
             
-            # Predict
             # Model expects (Batch, H, W, C) -> (1, 84, 84, 4)
             obs_input = np.expand_dims(self.opponent_obs_buffer, axis=0) 
-            # Note: SB3 PPO predict expects NCHW or NHWC depending on backend, usually numpy input is fine.
             action, _ = self.opponent_policy.predict(obs_input, deterministic=True)
-            
             action = action.item()
             
-            if action == 1: # Up
+            if action == 1:  # Up
                 self.left_paddle_y -= self.paddle_speed
-            elif action == 2: # Down
+            elif action == 2:  # Down
+                self.left_paddle_y += self.paddle_speed
+        else:
+            # Simple Heuristic: Follow the ball
+            if self.ball_y < self.left_paddle_y + self.paddle_height / 2:
+                self.left_paddle_y -= self.paddle_speed
+            elif self.ball_y > self.left_paddle_y + self.paddle_height / 2:
                 self.left_paddle_y += self.paddle_speed
             
         self.left_paddle_y = np.clip(self.left_paddle_y, 0, self.screen_height - self.paddle_height)
+
+    def set_opponent_action(self, action):
+        """Set the opponent's action for human mode (called from play.py)."""
+        self.human_action = action
+    
+    def enable_human_mode(self, enabled=True):
+        """Enable/disable human control of the opponent (left paddle)."""
+        self.human_mode = enabled
 
     def update_opponent_model(self, model_path):
         """

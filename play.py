@@ -62,49 +62,39 @@ def play(model_path, mode="human", opponent_path=None):
         # Pass the path to the environment so it can load it internally
         env.env_method("update_opponent_model", opponent_path)
     
+    # Enable human mode if playing Human vs AI
+    if mode == "human":
+        env.env_method("enable_human_mode", True)
+    
     # 4. Loop
     obs = env.reset()
     
     running = True
     while running:
-        # Agent Action
-        action, _ = model.predict(obs, deterministic=True)
+        # CRITICAL: Process pygame events to prevent window freeze and enable keyboard input
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    running = False
         
-        # In Human vs AI mode, typically Human plays the "Agent" paddle?
-        # Specification says: "Human vs AI: I play against the AI"
-        # Our Environment: Agent = Right Paddle. Opponent = Left Paddle.
-        # If User wants to play, User should control Right Paddle? Or Left?
-        # Usually User = Player 1 (Left). AI = Player 2 (Right).
-        # Our logic: Agent controls Right. Opponent controls Left.
-        # So "Human vs AI" means Human is Left (Opponent) and AI is Right (Agent).
-        # But our Env auto-moves the Opponent (Left).
-        # We need to disable Opponent AI if Human is playing!
-        
-        if mode == "human":
-            # We need to override the Internal Opponent Logic to be Keyboard controlled
-            # This is tricky because the Env logic is hardcoded in step()
-            # We can hack it or add a flag to PongEnv.
-            
-            # Let's handle keyboard events here and force the paddle position?
-            # Or better: Add a 'human_opponent' flag to env.
-            pass # See below
-            
-        # Step
-        obs, rewards, dones, infos = env.step(action)
-        
-        # Handle User Input for Human Mode
-        # We can detect keys here (Pygame is running)
+        # Handle User Input for Human Mode BEFORE stepping
+        # This ensures the human action is set before the environment processes it
         if mode == "human":
             keys = pygame.key.get_pressed()
-            # We need to send this to the env. 
-            # env.env_method("set_human_action", ...)
             human_action = 0
-            if keys[pygame.K_w]: human_action = 1 # Up
-            if keys[pygame.K_s]: human_action = 2 # Down
-            
+            if keys[pygame.K_w]: human_action = 1  # Up
+            if keys[pygame.K_s]: human_action = 2  # Down
             env.env_method("set_opponent_action", human_action)
+        
+        # Agent Action (AI controls the Right Paddle)
+        action, _ = model.predict(obs, deterministic=True)
             
-        time.sleep(1/60.0) # Cap FPS roughly
+        # Step the environment
+        obs, rewards, dones, infos = env.step(action)
+            
+        time.sleep(1/60.0)  # Cap FPS roughly
 
         if dones[0]:
             print("Round Over")
