@@ -1,6 +1,6 @@
-# Ping Pong RL Playground
+# Pong RL Playground
 
-This project implements a Reinforcement Learning agent to play Ping Pong from raw pixels using Stable-Baselines3 and PyGame. It features a self-play mechanism where the agent trains against checkpoints of itself.
+This project implements a Reinforcement Learning agent to play Pong from raw pixels using Stable-Baselines3 and PyGame. It features a self-play mechanism where the agent trains against checkpoints of itself.
 
 ## Requirements
 
