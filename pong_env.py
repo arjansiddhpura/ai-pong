@@ -125,22 +125,37 @@ class PongEnv(gym.Env):
             self.ball_vy = np.clip(self.ball_vy, -self.ball_speed_val * 1.5, self.ball_speed_val * 1.5)
 
         # 5. Scoring & Rewards
-        reward = 0
+        reward = 0.0
         terminated = False
         
+        # REWARD SHAPING: Give intermediate rewards for good positioning
+        # This helps the agent learn faster than sparse +1/-1 rewards
+        
+        # Small reward for staying close to ball's y position (tracking behavior)
+        paddle_center = self.right_paddle_y + self.paddle_height / 2
+        ball_center = self.ball_y + self.ball_size / 2
+        distance_to_ball = abs(paddle_center - ball_center)
+        
+        # Normalize distance (max is screen_height / 2)
+        normalized_distance = distance_to_ball / (self.screen_height / 2)
+        
+        # Small reward for good positioning (closer = better)
+        reward += 0.01 * (1.0 - normalized_distance)
+        
+        # Reward for successfully hitting the ball
+        if ball_rect.colliderect(right_paddle_rect):
+            reward += 0.1  # Bonus for successful paddle hit
+        
+        # Terminal rewards
         if self.ball_x < 0:
-            # Agent (Right) Scored? No, Agent is Right paddle.
-            # If ball < 0, it went past Left Paddle. So Right Paddle (Agent) Scored.
-            # WAIT. Standard pong: left side is player 1, right side is player 2.
-            # "Agent controls Right Paddle".
-            # If ball x < 0, it went past Left paddle -> Agent wins point.
+            # Ball went past Left Paddle -> Agent wins point
             self.score_right += 1
-            reward = 1.0
+            reward = 1.0  # Override with terminal reward
             terminated = True
         elif self.ball_x > self.screen_width:
-            # Ball went past Right Paddle -> Opponent wins point.
+            # Ball went past Right Paddle -> Opponent wins point
             self.score_left += 1
-            reward = -1.0
+            reward = -1.0  # Override with terminal reward
             terminated = True
 
         # Render
@@ -152,7 +167,8 @@ class PongEnv(gym.Env):
     def _move_opponent(self):
         """
         Logic for the Left Paddle (Opponent).
-        This can be: human keyboard input, a loaded policy, or simple heuristic.
+        Modes: human keyboard, loaded policy, or perfect AI.
+        The perfect AI predicts where the ball will be and moves there.
         """
         # Human mode: Use keyboard input stored via set_opponent_action
         if self.human_mode:
@@ -163,37 +179,74 @@ class PongEnv(gym.Env):
         elif self.opponent_policy is not None:
             # Predict action using the trained model
             raw_obs = self._get_obs()
-            # Flip horizontally so Left becomes Right (visual perspective swap)
             flipped_obs = np.fliplr(raw_obs)
             
-            # Preprocess (Gray + Resize)
             gray = cv2.cvtColor(flipped_obs, cv2.COLOR_RGB2GRAY)
             resized = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
             
-            # Maintain frame buffer for stacked input
             if not hasattr(self, 'opponent_obs_buffer'):
                 self.opponent_obs_buffer = np.zeros((84, 84, 4), dtype=np.uint8)
             
             self.opponent_obs_buffer = np.roll(self.opponent_obs_buffer, -1, axis=-1)
             self.opponent_obs_buffer[:, :, -1] = resized
             
-            # Model expects (Batch, H, W, C) -> (1, 84, 84, 4)
             obs_input = np.expand_dims(self.opponent_obs_buffer, axis=0) 
             action, _ = self.opponent_policy.predict(obs_input, deterministic=True)
             action = action.item()
             
-            if action == 1:  # Up
+            if action == 1:
                 self.left_paddle_y -= self.paddle_speed
-            elif action == 2:  # Down
+            elif action == 2:
                 self.left_paddle_y += self.paddle_speed
         else:
-            # Simple Heuristic: Follow the ball
-            if self.ball_y < self.left_paddle_y + self.paddle_height / 2:
+            # PERFECT OPPONENT: Predict where ball will intercept left paddle x-position
+            # This creates a very challenging opponent that the agent must learn to beat
+            target_y = self._predict_ball_intercept_y()
+            paddle_center = self.left_paddle_y + self.paddle_height / 2
+            
+            # Move towards predicted intercept point
+            if target_y < paddle_center - 2:  # Small deadzone to prevent jitter
                 self.left_paddle_y -= self.paddle_speed
-            elif self.ball_y > self.left_paddle_y + self.paddle_height / 2:
+            elif target_y > paddle_center + 2:
                 self.left_paddle_y += self.paddle_speed
             
         self.left_paddle_y = np.clip(self.left_paddle_y, 0, self.screen_height - self.paddle_height)
+
+    def _predict_ball_intercept_y(self):
+        """
+        Predict where the ball will be when it reaches the left paddle's x position.
+        This simulates the ball trajectory to give the opponent perfect information.
+        """
+        # Left paddle x position (where we want to intercept)
+        target_x = 50 + self.paddle_width
+        
+        # If ball is moving away from left paddle, just track current position
+        if self.ball_vx > 0:
+            return self.ball_y + self.ball_size / 2
+        
+        # Simulate ball trajectory
+        sim_x = self.ball_x
+        sim_y = self.ball_y
+        sim_vx = self.ball_vx
+        sim_vy = self.ball_vy
+        
+        # Maximum simulation steps to prevent infinite loop
+        max_steps = 500
+        for _ in range(max_steps):
+            sim_x += sim_vx
+            sim_y += sim_vy
+            
+            # Bounce off top/bottom walls
+            if sim_y <= 0 or sim_y >= self.screen_height - self.ball_size:
+                sim_vy *= -1
+                sim_y = np.clip(sim_y, 0, self.screen_height - self.ball_size)
+            
+            # Check if ball reached target x
+            if sim_x <= target_x:
+                return sim_y + self.ball_size / 2
+        
+        # Fallback: return current ball y
+        return self.ball_y + self.ball_size / 2
 
     def set_opponent_action(self, action):
         """Set the opponent's action for human mode (called from play.py)."""

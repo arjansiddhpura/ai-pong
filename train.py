@@ -99,6 +99,7 @@ if __name__ == "__main__":
     parser.add_argument("--steps", type=int, default=1_000_000, help="Total training steps")
     parser.add_argument("--update_freq", type=int, default=50_000, help="Steps before updating opponent")
     parser.add_argument("--n_envs", type=int, default=4, help="Number of parallel environments")
+    parser.add_argument("--perfect_opponent", action="store_true", help="Train against perfect AI (no self-play)")
     args = parser.parse_args()
 
     device = get_device()
@@ -117,7 +118,7 @@ if __name__ == "__main__":
     
     # 2. Frame Stacking
     # Stack 4 frames
-    env = VecFrameStack(env, n_stack=4, channels_order='last') 
+    env = VecFrameStack(env, n_stack=8, channels_order='last') 
 
     # 3. Define Model
     # CnnPolicy is standard for pixel inputs
@@ -134,8 +135,12 @@ if __name__ == "__main__":
         ent_coef=0.01
     )
     
-    # 4. Callback
-    callback = SelfPlayCallback(update_interval=args.update_freq, save_path=save_dir)
+    # 4. Callback - only use self-play if not training against perfect opponent
+    if args.perfect_opponent:
+        print("Training against PERFECT OPPONENT (no self-play)")
+        callback = None
+    else:
+        callback = SelfPlayCallback(update_interval=args.update_freq, save_path=save_dir)
 
     # 5. Train
     print(f"Starting training on {device} for {args.steps} steps...")
