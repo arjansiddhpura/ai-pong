@@ -33,7 +33,7 @@ mkdir -p logs
 
 echo "Launching training on 1 GPU..."
 
-python train.py --steps 10000000 --n_envs 8
+python train.py --steps 1000000 --n_envs 8
 
 echo "All training processes completed!"
 echo "Models saved in ./models/"
