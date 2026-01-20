@@ -128,11 +128,16 @@ if __name__ == "__main__":
         device=device,
         verbose=1, 
         tensorboard_log="./logs",
-        learning_rate=2.5e-4,
-        n_steps=128,
-        batch_size=256,
-        n_epochs=4,
-        ent_coef=0.01
+        
+        # Tuned Hyperparameters
+        learning_rate=2.5e-4,    # Slower learning for stability
+        n_steps=256,             # Larger window of experience per update
+        batch_size=256,          # Standard for Atari-like tasks
+        n_epochs=10,             # More passes over the data per update
+        gamma=0.99,              # Discount factor for long-term rewards
+        gae_lambda=0.95,         # Standard GAE
+        clip_range=0.1,          # Tighter clipping to prevent massive shifts
+        ent_coef=0.05,           # Increased exploration bonus
     )
     
     # 4. Callback - only use self-play if not training against perfect opponent
