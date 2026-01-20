@@ -19,7 +19,7 @@ def play(model_path, mode="human", opponent_path=None):
         return e
     
     env = DummyVecEnv([make_env])
-    env = VecFrameStack(env, n_stack=4, channels_order='last')
+    env = VecFrameStack(env, n_stack=8, channels_order='last')
 
     # 2. Load Agent
     print(f"Loading Agent from {model_path}")
