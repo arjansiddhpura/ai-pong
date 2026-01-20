@@ -11,39 +11,13 @@ from pong_env import PongEnv
 from train import CompatiblePongWrapper  # Reuse wrapper logic
 
 def play(model_path, mode="human", opponent_path=None):
-    # 1. Init Environment
-    # For playback, we want "human" render mode to see it in a window
-    render_mode = "human"
-    env = PongEnv(render_mode=render_mode)
-    
-    # We still need to wrap it for the AI to understand inputs
-    # But we want to play the unwrapped env to see it? 
-    # The wrappers modify the env.step() and observation space.
-    # If we wrap it, 'env.render()' should still work if wrappers delegate it.
-    
-    # Re-create the wrapping stack manually since we aren't using make_vec_env with 'human' easily
-    # Or just wrap the single env instance.
-    env = CompatiblePongWrapper(env)
-    
-    # FrameStack is usually part of VecEnv in SB3.
-    # To run a single instance with FrameStack, we can use gymnasium.wrappers.FrameStack
-    # But SB3's VecFrameStack is what the model expects (batch dim).
-    # Simplest way: Put it in a DummyVecEnv, then access the internal env for rendering if needed?
-    # Actually, if we use DummyVecEnv([lambda: env]), the render() might be hidden.
-    
-    # Better approach for visualization:
-    # Use the same setup as training but with render_mode='human' passed to env constructor.
-    # DummyVecEnv supports simple rendering if we call env.render().
-    
-    env = DummyVecEnv([lambda: PongEnv(render_mode="human")])
-    env = VecFrameStack(env, n_stack=4, channels_order='last')
-    # Note: We missed CompatiblePongWrapper in the lambda above! Correcting...
-    
+    # 1. Create Environment with proper wrapping
+    # We wrap in DummyVecEnv + VecFrameStack for compatibility with SB3 model
     def make_env():
         e = PongEnv(render_mode="human")
         e = CompatiblePongWrapper(e)
         return e
-        
+    
     env = DummyVecEnv([make_env])
     env = VecFrameStack(env, n_stack=4, channels_order='last')
 
@@ -99,6 +73,9 @@ def play(model_path, mode="human", opponent_path=None):
         if dones[0]:
             print("Round Over")
             obs = env.reset()
+    
+    # Cleanup
+    env.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

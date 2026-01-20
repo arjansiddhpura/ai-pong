@@ -9,7 +9,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecFrameStack, DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.atari_wrappers import AtariWrapper # SB3 has nice default wrappers, but we might need custom ones
+# Note: AtariWrapper not needed since we use custom PongEnv with CompatiblePongWrapper
 from gymnasium.wrappers import ResizeObservation, GrayscaleObservation
 
 from pong_env import PongEnv
@@ -43,11 +43,12 @@ class CompatiblePongWrapper(gym.Wrapper):
 def make_env(rank, seed=0):
     """
     Utility function for multiprocessed env.
+    Each environment gets a unique seed based on rank.
     """
     def _init():
         env = PongEnv()
         env = CompatiblePongWrapper(env)
-        env = Monitor(env) # Record stats
+        env = Monitor(env)  # Record stats
         env.reset(seed=seed + rank)
         return env
     return _init
@@ -105,9 +106,14 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)
     
     # 1. Create Vectorized Environment
-    # Use SubprocVecEnv for true parallelism, but DummyVecEnv is easier for debugging/Mac execution sometimes.
-    # On Cluster, Subproc is good.
-    env = make_vec_env(make_env(0), n_envs=args.n_envs, vec_env_cls=DummyVecEnv) # Changed to Dummy for safety on Mac/MPS first
+    # Use SubprocVecEnv for true parallelism on cluster
+    # DummyVecEnv is used for Mac/MPS since SubprocVecEnv has issues with MPS
+    if device == "mps":
+        # Mac: Use DummyVecEnv for compatibility
+        env = DummyVecEnv([make_env(i) for i in range(args.n_envs)])
+    else:
+        # Linux/CUDA: Use SubprocVecEnv for true parallelism
+        env = SubprocVecEnv([make_env(i) for i in range(args.n_envs)])
     
     # 2. Frame Stacking
     # Stack 4 frames

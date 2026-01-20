@@ -1,6 +1,7 @@
 import gymnasium as gym
 import numpy as np
 import pygame
+import cv2
 import os
 from gymnasium import spaces
 
@@ -114,10 +115,14 @@ class PongEnv(gym.Env):
             self.ball_vx = abs(self.ball_vx) # Bounce right
             # Add some randomness to y velocity to prevent loops
             self.ball_vy += self.np_random.uniform(-1, 1)
+            # Clamp ball velocity to prevent unrealistic speeds
+            self.ball_vy = np.clip(self.ball_vy, -self.ball_speed_val * 1.5, self.ball_speed_val * 1.5)
             
         if ball_rect.colliderect(right_paddle_rect):
             self.ball_vx = -abs(self.ball_vx) # Bounce left
             self.ball_vy += self.np_random.uniform(-1, 1)
+            # Clamp ball velocity to prevent unrealistic speeds
+            self.ball_vy = np.clip(self.ball_vy, -self.ball_speed_val * 1.5, self.ball_speed_val * 1.5)
 
         # 5. Scoring & Rewards
         reward = 0
@@ -157,7 +162,6 @@ class PongEnv(gym.Env):
                 self.left_paddle_y += self.paddle_speed
         elif self.opponent_policy is not None:
             # Predict action using the trained model
-            import cv2
             raw_obs = self._get_obs()
             # Flip horizontally so Left becomes Right (visual perspective swap)
             flipped_obs = np.fliplr(raw_obs)

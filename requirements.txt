@@ -2,7 +2,7 @@
 torch>=2.0.0; sys_platform == 'darwin'  # For MPS support on Mac
 torch>=2.0.0; sys_platform != 'darwin'  # General torch for Linux/Cluster
 stable-baselines3[extra]>=2.0.0
-gymnasium[atary,accept-rom-license]>=0.28.1
+gymnasium[atari,accept-rom-license]>=0.28.1
 shimmy>=1.3.0 # For compatibility if needed
 
 # Game Environment
