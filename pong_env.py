@@ -185,12 +185,14 @@ class PongEnv(gym.Env):
             resized = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
             
             if not hasattr(self, 'opponent_obs_buffer'):
-                self.opponent_obs_buffer = np.zeros((84, 84, 4), dtype=np.uint8)
+                self.opponent_obs_buffer = np.zeros((84, 84, 8), dtype=np.uint8)
             
             self.opponent_obs_buffer = np.roll(self.opponent_obs_buffer, -1, axis=-1)
             self.opponent_obs_buffer[:, :, -1] = resized
             
-            obs_input = np.expand_dims(self.opponent_obs_buffer, axis=0) 
+            # Transpose to channels-first format (8, 84, 84) to match model expectations
+            obs_channels_first = np.transpose(self.opponent_obs_buffer, (2, 0, 1))
+            obs_input = np.expand_dims(obs_channels_first, axis=0) 
             action, _ = self.opponent_policy.predict(obs_input, deterministic=True)
             action = action.item()
             
@@ -264,8 +266,8 @@ class PongEnv(gym.Env):
         print(f"Loading opponent model from {model_path}")
         try:
             self.opponent_policy = PPO.load(model_path)
-            # Reset buffer on new model load
-            self.opponent_obs_buffer = np.zeros((84, 84, 4), dtype=np.uint8)
+            # Reset buffer on new model load (8 frames to match training stack)
+            self.opponent_obs_buffer = np.zeros((84, 84, 8), dtype=np.uint8)
         except Exception as e:
             print(f"Failed to load opponent model: {e}")
 
